@@ -1,0 +1,130 @@
+{
+  "name": "RAG - Consulta via Webhook",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "rag-query",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook - Recibir Pregunta",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [250, 300],
+      "webhookId": "rag-query-webhook"
+    },
+    {
+      "parameters": {
+        "functionCode": "const body = $input.first().json.body;\n\nif (!body || !body.pregunta) {\n  return [{\n    json: {\n      error: true,\n      mensaje: 'El campo \"pregunta\" es requerido en el body del request'\n    }\n  }];\n}\n\nreturn [{\n  json: {\n    pregunta: body.pregunta,\n    top_k: body.top_k || 5,\n    temperature: body.temperature || 0.3\n  }\n}];"
+      },
+      "id": "validate-input",
+      "name": "Validar entrada",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [470, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://api:8000/api/query",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ pregunta: $json.pregunta, top_k: $json.top_k, temperature: $json.temperature }) }}",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "id": "query-api",
+      "name": "Consultar API RAG",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [690, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "const data = $input.first().json;\n\nreturn [{\n  json: {\n    respuesta: data.respuesta,\n    fuentes: (data.fuentes || []).map(f => ({\n      documento: f.documento,\n      fragmento: f.fragmento,\n      similitud: f.similitud,\n      pagina: f.pagina\n    })),\n    modelo: data.modelo_usado,\n    fragmentos_consultados: data.fragmentos_consultados,\n    timestamp: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "format-response",
+      "name": "Formatear respuesta",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [910, 300]
+    },
+    {
+      "parameters": {
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "respond-webhook",
+      "name": "Responder al Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1130, 300]
+    }
+  ],
+  "connections": {
+    "Webhook - Recibir Pregunta": {
+      "main": [
+        [
+          {
+            "node": "Validar entrada",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validar entrada": {
+      "main": [
+        [
+          {
+            "node": "Consultar API RAG",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Consultar API RAG": {
+      "main": [
+        [
+          {
+            "node": "Formatear respuesta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Formatear respuesta": {
+      "main": [
+        [
+          {
+            "node": "Responder al Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "tags": [
+    {
+      "name": "RAG",
+      "id": "1"
+    },
+    {
+      "name": "Consulta",
+      "id": "3"
+    }
+  ]
+}

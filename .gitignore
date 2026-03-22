@@ -1,0 +1,38 @@
+# Entorno
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+*.egg
+.venv/
+venv/
+
+# Datos persistentes (generados por Docker)
+chroma_data/
+
+# Modelos descargados
+*.bin
+*.onnx
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Documentos de usuario (no versionar datos sensibles)
+data/documentos/*
+!data/documentos/.gitkeep
+
+# Logs
+*.log

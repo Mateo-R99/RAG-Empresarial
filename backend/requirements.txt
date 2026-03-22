@@ -1,0 +1,21 @@
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+python-multipart==0.0.20
+pydantic-settings==2.7.1
+
+# Procesamiento de documentos
+pypdf==5.1.0
+python-docx==1.1.2
+
+# Chunking
+langchain-text-splitters==0.3.4
+
+# Embeddings
+sentence-transformers==3.3.1
+
+# Base de datos vectorial
+chromadb==0.5.23
+
+# LLM providers
+openai==1.58.1
+httpx==0.28.1
