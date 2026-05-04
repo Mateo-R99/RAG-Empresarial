@@ -1,0 +1,16 @@
+{
+  "empleado1": {
+    "username": "empleado1",
+    "nombre_completo": "Empleado Demo",
+    "role": "empleado",
+    "hashed_password": "$2b$12$WoHODA4TMZwwgvtbKdl5Dea9A4S3i7UtjXRVC7isSxfeIsKurWete",
+    "activo": true
+  },
+  "gerente1": {
+    "username": "gerente1",
+    "nombre_completo": "Gerente Demo",
+    "role": "gerente",
+    "hashed_password": "$2b$12$RAKMkjBiIakPg6jP6l3hbe/BD0XXjlo5e8nphbUS5Mi8Gz6Sq15ui",
+    "activo": true
+  }
+}

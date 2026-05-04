@@ -1,16 +1,20 @@
 """
 Motor RAG: orquesta búsqueda semántica + generación de respuestas con LLM.
 Soporta Ollama (local) y OpenAI como proveedores de LLM.
+Con soporte de roles para búsqueda en colecciones adecuadas.
 """
 
+import json
+import os
 import logging
+from datetime import datetime, timezone
 from typing import Optional
 
 import httpx
 from openai import OpenAI
 
 from app.config import get_settings
-from app.services.vector_store import VectorStore, SearchResult
+from app.services.vector_store import VectorStore, MultiVectorStore, SearchResult, get_vector_store_for_role
 from app.prompts.system_prompt import SYSTEM_PROMPT
 from app.models.schemas import QueryResponse, FuenteInfo
 
@@ -18,29 +22,33 @@ logger = logging.getLogger(__name__)
 
 
 class RAGEngine:
-    """Motor de Retrieval-Augmented Generation."""
+    """Motor de Retrieval-Augmented Generation con soporte de roles."""
 
-    def __init__(self):
-        self.vector_store = VectorStore()
+    def __init__(self, role: str = "empleado"):
+        self.vector_store = get_vector_store_for_role(role)
         self.settings = get_settings()
+        self.role = role
 
     async def query(
         self,
         pregunta: str,
         top_k: Optional[int] = None,
         temperature: Optional[float] = None,
+        usuario: str = "anónimo",
     ) -> QueryResponse:
         """
         Ejecuta el pipeline RAG completo:
-        1. Busca fragmentos relevantes en la base vectorial
+        1. Busca fragmentos relevantes en la base vectorial (según rol)
         2. Construye contexto con los fragmentos
         3. Genera respuesta con el LLM
         4. Formatea respuesta con fuentes
+        5. Registra la consulta en el historial
 
         Args:
             pregunta: Pregunta del usuario en lenguaje natural
             top_k: Número de fragmentos a recuperar
             temperature: Temperatura del LLM
+            usuario: Nombre del usuario que realiza la consulta
 
         Returns:
             QueryResponse con respuesta y fuentes citadas
@@ -49,10 +57,12 @@ class RAGEngine:
         temp = temperature or self.settings.temperature
 
         # 1. Búsqueda semántica
-        logger.info(f"RAG Query: '{pregunta}' (top_k={k}, temp={temp})")
+        logger.info(f"RAG Query [{self.role}]: '{pregunta}' (top_k={k}, temp={temp})")
         resultados = self.vector_store.search(pregunta, top_k=k)
 
         if not resultados:
+            # Registrar consulta sin resultados
+            self._record_query(usuario, pregunta, 0)
             return QueryResponse(
                 respuesta="No encontré documentos relevantes para responder tu pregunta. Asegúrate de haber cargado documentos al sistema.",
                 fuentes=[],
@@ -76,9 +86,13 @@ class RAGEngine:
                 chunk_id=r.chunk_id,
                 similitud=r.similitud,
                 pagina=r.pagina,
+                coleccion=r.coleccion,
             )
             for r in resultados
         ]
+
+        # 5. Registrar consulta en historial
+        self._record_query(usuario, pregunta, len(resultados))
 
         return QueryResponse(
             respuesta=respuesta,
@@ -122,6 +136,7 @@ class RAGEngine:
             "options": {
                 "temperature": temperature,
                 "num_predict": 2048,
+                "num_ctx": 8192,
             }
         }
 
@@ -184,3 +199,39 @@ class RAGEngine:
         except Exception:
             return False
         return False
+
+    def _record_query(self, usuario: str, pregunta: str, fragmentos: int):
+        """Registra una consulta en el archivo de historial JSON."""
+        try:
+            history_path = self.settings.query_history_path
+            os.makedirs(os.path.dirname(history_path), exist_ok=True)
+
+            # Cargar historial existente
+            history = []
+            if os.path.exists(history_path):
+                try:
+                    with open(history_path, "r", encoding="utf-8") as f:
+                        history = json.load(f)
+                except (json.JSONDecodeError, FileNotFoundError):
+                    history = []
+
+            # Agregar nueva entrada
+            entry = {
+                "usuario": usuario,
+                "pregunta": pregunta,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "fragmentos_usados": fragmentos,
+                "rol": self.role,
+            }
+            history.append(entry)
+
+            # Mantener solo las últimas 500 consultas
+            if len(history) > 500:
+                history = history[-500:]
+
+            # Guardar
+            with open(history_path, "w", encoding="utf-8") as f:
+                json.dump(history, f, indent=2, ensure_ascii=False)
+
+        except Exception as e:
+            logger.warning(f"No se pudo registrar consulta en historial: {e}")

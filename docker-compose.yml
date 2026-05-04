@@ -12,6 +12,8 @@ services:
       - "8000:8000"
     volumes:
       - ./data/documentos:/app/data/documentos
+      - ./backend/users.json:/app/users.json
+      - query_history:/app/data
       - embeddings_cache:/root/.cache
     environment:
       - CHROMA_HOST=chroma
@@ -25,6 +27,8 @@ services:
       - TEMPERATURE=${TEMPERATURE:-0.3}
       - LLM_PROVIDER=${LLM_PROVIDER:-ollama}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-cambiar-en-produccion-clave-secreta}
+      - JWT_EXPIRE_MINUTES=${JWT_EXPIRE_MINUTES:-480}
     depends_on:
       chroma:
         condition: service_healthy
@@ -98,6 +102,8 @@ volumes:
   n8n_data:
     driver: local
   embeddings_cache:
+    driver: local
+  query_history:
     driver: local
 
 networks:

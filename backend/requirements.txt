@@ -19,3 +19,7 @@ chromadb==0.5.23
 # LLM providers
 openai==1.58.1
 httpx==0.28.1
+
+# Autenticación
+python-jose[cryptography]==3.3.0
+bcrypt==4.2.1

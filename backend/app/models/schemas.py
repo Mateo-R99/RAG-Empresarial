@@ -6,6 +6,30 @@ from pydantic import BaseModel, Field
 from typing import Optional
 
 
+# ─── Auth ──────────────────────────────────────────────────────────────
+
+class LoginRequest(BaseModel):
+    """Solicitud de inicio de sesión."""
+    username: str = Field(..., description="Nombre de usuario", min_length=1)
+    password: str = Field(..., description="Contraseña", min_length=1)
+
+
+class LoginResponse(BaseModel):
+    """Respuesta exitosa de inicio de sesión."""
+    access_token: str = Field(..., description="Token JWT de acceso")
+    token_type: str = Field(default="bearer", description="Tipo de token")
+    role: str = Field(..., description="Rol del usuario (empleado/gerente)")
+    username: str = Field(..., description="Nombre de usuario")
+    nombre_completo: str = Field(..., description="Nombre completo del usuario")
+
+
+class UserInfo(BaseModel):
+    """Información del usuario autenticado."""
+    username: str
+    role: str
+    nombre_completo: str
+
+
 # ─── Requests ──────────────────────────────────────────────────────────
 
 class QueryRequest(BaseModel):
@@ -30,6 +54,7 @@ class FuenteInfo(BaseModel):
     chunk_id: int = Field(..., description="Número del fragmento")
     similitud: float = Field(..., description="Score de similitud (0-1)")
     pagina: Optional[int] = Field(None, description="Página del documento (si aplica)")
+    coleccion: Optional[str] = Field(None, description="Colección de origen (publico/privado)")
 
 
 class QueryResponse(BaseModel):
@@ -48,6 +73,7 @@ class SearchResult(BaseModel):
     chunk_id: int
     similitud: float
     pagina: Optional[int] = None
+    coleccion: Optional[str] = None
 
 
 class SearchResponse(BaseModel):
@@ -63,6 +89,7 @@ class IngestResponse(BaseModel):
     documento: str
     fragmentos_creados: int
     caracteres_totales: int
+    clasificacion: str = Field(..., description="Clasificación del documento: publico o privado")
 
 
 class DocumentInfo(BaseModel):
@@ -70,6 +97,7 @@ class DocumentInfo(BaseModel):
     nombre: str
     fragmentos: int
     tipo: str
+    coleccion: Optional[str] = None
 
 
 class DocumentsResponse(BaseModel):
@@ -86,3 +114,24 @@ class HealthResponse(BaseModel):
     llm_disponible: bool = False
     modelo_embeddings: str = ""
     proveedor_llm: str = ""
+
+
+# ─── Métricas y Historial (Solo Gerente) ──────────────────────────────
+
+class QueryHistoryItem(BaseModel):
+    """Elemento del historial de consultas."""
+    usuario: str
+    pregunta: str
+    timestamp: str
+    fragmentos_usados: int
+    rol: str
+
+
+class MetricsResponse(BaseModel):
+    """Estadísticas del sistema."""
+    total_documentos_publicos: int
+    total_documentos_privados: int
+    total_fragmentos_publicos: int
+    total_fragmentos_privados: int
+    total_consultas: int
+    consultas_recientes: list[QueryHistoryItem]

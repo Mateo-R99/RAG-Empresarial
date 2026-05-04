@@ -1,6 +1,6 @@
 """
 Servicio de almacenamiento vectorial con ChromaDB.
-Wrapper para operaciones CRUD sobre la base de datos vectorial.
+Soporta colecciones duales (pública/privada) con búsqueda según rol.
 """
 
 import logging
@@ -25,12 +25,13 @@ class SearchResult:
     chunk_id: int
     similitud: float
     pagina: Optional[int] = None
+    coleccion: Optional[str] = None
 
 
 class VectorStore:
     """Wrapper sobre ChromaDB para el almacenamiento y búsqueda vectorial."""
 
-    def __init__(self):
+    def __init__(self, collection_name: Optional[str] = None):
         settings = get_settings()
         self.embeddings_service = EmbeddingsService()
 
@@ -41,15 +42,18 @@ class VectorStore:
             settings=ChromaSettings(anonymized_telemetry=False)
         )
 
+        # Determinar nombre de colección
+        self._collection_name = collection_name or settings.chroma_collection_public
+
         # Obtener o crear la colección
         self.collection = self.client.get_or_create_collection(
-            name=settings.chroma_collection,
+            name=self._collection_name,
             metadata={"hnsw:space": "cosine"}  # Similitud de coseno
         )
 
         logger.info(
             f"ChromaDB conectado ({settings.chroma_host}:{settings.chroma_port}), "
-            f"colección: {settings.chroma_collection}, "
+            f"colección: {self._collection_name}, "
             f"documentos existentes: {self.collection.count()}"
         )
 
@@ -88,7 +92,7 @@ class VectorStore:
             metadatas=metadatas,
         )
 
-        logger.info(f"Añadidos {len(chunks)} fragmentos de '{chunks[0].documento}' a ChromaDB")
+        logger.info(f"Añadidos {len(chunks)} fragmentos de '{chunks[0].documento}' a colección '{self._collection_name}'")
         return len(chunks)
 
     def search(self, query: str, top_k: Optional[int] = None) -> list[SearchResult]:
@@ -127,9 +131,10 @@ class VectorStore:
                     chunk_id=metadata.get("chunk_id", 0),
                     similitud=round(max(0, similitud), 4),
                     pagina=metadata.get("pagina") if metadata.get("pagina", -1) != -1 else None,
+                    coleccion=self._collection_name,
                 ))
 
-        logger.info(f"Búsqueda: '{query[:50]}...' → {len(search_results)} resultados (top_k={k})")
+        logger.info(f"Búsqueda [{self._collection_name}]: '{query[:50]}...' → {len(search_results)} resultados (top_k={k})")
         return search_results
 
     def list_documents(self) -> list[dict]:
@@ -146,7 +151,11 @@ class VectorStore:
             for meta in all_metadata["metadatas"]:
                 doc_name = meta.get("documento", "desconocido")
                 if doc_name not in doc_counts:
-                    doc_counts[doc_name] = {"nombre": doc_name, "fragmentos": 0}
+                    doc_counts[doc_name] = {
+                        "nombre": doc_name,
+                        "fragmentos": 0,
+                        "coleccion": self._collection_name,
+                    }
                 doc_counts[doc_name]["fragmentos"] += 1
 
         return list(doc_counts.values())
@@ -170,10 +179,14 @@ class VectorStore:
         if results and results["ids"]:
             self.collection.delete(ids=results["ids"])
             count = len(results["ids"])
-            logger.info(f"Eliminados {count} fragmentos de '{documento}'")
+            logger.info(f"Eliminados {count} fragmentos de '{documento}' en colección '{self._collection_name}'")
             return count
 
         return 0
+
+    def get_total_count(self) -> int:
+        """Retorna el total de fragmentos en la colección."""
+        return self.collection.count()
 
     def is_connected(self) -> bool:
         """Verifica la conexión con ChromaDB."""
@@ -182,3 +195,67 @@ class VectorStore:
             return True
         except Exception:
             return False
+
+
+class MultiVectorStore:
+    """
+    Busca en múltiples colecciones y combina resultados.
+    Usado para el rol 'gerente' que accede a documentos públicos y privados.
+    """
+
+    def __init__(self):
+        settings = get_settings()
+        self.vs_public = VectorStore(collection_name=settings.chroma_collection_public)
+        self.vs_private = VectorStore(collection_name=settings.chroma_collection_private)
+
+    def search(self, query: str, top_k: Optional[int] = None) -> list[SearchResult]:
+        """
+        Busca en ambas colecciones y combina resultados por similitud.
+
+        Args:
+            query: Texto de búsqueda
+            top_k: Número total de resultados deseados
+
+        Returns:
+            Lista combinada de SearchResult ordenados por similitud
+        """
+        settings = get_settings()
+        k = top_k or settings.top_k
+
+        # Buscar en ambas colecciones (pedir más para luego filtrar)
+        results_pub = self.vs_public.search(query, top_k=k)
+        results_priv = self.vs_private.search(query, top_k=k)
+
+        # Combinar y ordenar por similitud descendente
+        combined = results_pub + results_priv
+        combined.sort(key=lambda r: r.similitud, reverse=True)
+
+        return combined[:k]
+
+    def list_documents(self) -> list[dict]:
+        """Lista documentos de ambas colecciones."""
+        docs_pub = self.vs_public.list_documents()
+        docs_priv = self.vs_private.list_documents()
+        return docs_pub + docs_priv
+
+    def delete_document(self, documento: str) -> int:
+        """Elimina un documento de ambas colecciones."""
+        count_pub = self.vs_public.delete_document(documento)
+        count_priv = self.vs_private.delete_document(documento)
+        return count_pub + count_priv
+
+    def is_connected(self) -> bool:
+        """Verifica la conexión con ChromaDB."""
+        return self.vs_public.is_connected()
+
+
+def get_vector_store_for_role(role: str):
+    """
+    Factory que retorna el VectorStore adecuado según el rol.
+    
+    - empleado: solo colección pública
+    - gerente: ambas colecciones (MultiVectorStore)
+    """
+    if role == "gerente":
+        return MultiVectorStore()
+    return VectorStore()  # por defecto, colección pública

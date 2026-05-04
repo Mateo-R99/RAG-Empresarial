@@ -28,6 +28,13 @@ class Settings(BaseSettings):
     chroma_host: str = "chroma"
     chroma_port: int = 8000
     chroma_collection: str = "documentos_empresariales"
+    chroma_collection_public: str = "documentos_publicos"
+    chroma_collection_private: str = "documentos_privados"
+
+    # ─── JWT ──────────────────────────────────────────────────────
+    jwt_secret_key: str = "cambiar-en-produccion-clave-super-secreta-2024"
+    jwt_algorithm: str = "HS256"
+    jwt_expire_minutes: int = 480  # 8 horas
 
     # ─── Chunking ─────────────────────────────────────────────────
     chunk_size: int = 1000
@@ -39,6 +46,7 @@ class Settings(BaseSettings):
 
     # ─── Rutas ────────────────────────────────────────────────────
     documents_path: str = "/app/data/documentos"
+    query_history_path: str = "/app/data/query_history.json"
 
     class Config:
         env_file = ".env"
